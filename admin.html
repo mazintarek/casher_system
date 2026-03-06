@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>لوحة الإدارة - Smart POS</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f0f2f5; padding: 20px; }
+        .container { max-width: 1000px; margin: auto; background: white; padding: 30px; border-radius: 15px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
+        h1 { color: #1e293b; border-bottom: 3px solid #10b981; padding-bottom: 10px; }
+        .input-group { display: grid; grid-template-columns: 2fr 2fr 1fr auto; gap: 15px; margin-bottom: 30px; background: #f8fafc; padding: 20px; border-radius: 10px; align-items: end; }
+        input { padding: 12px; border: 1px solid #ddd; border-radius: 8px; }
+        button { cursor: pointer; border: none; border-radius: 8px; font-weight: bold; transition: 0.3s; }
+        .add-btn { background: #10b981; color: white; padding: 12px 25px; }
+        .add-btn:hover { background: #059669; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th { background: #1e293b; color: white; padding: 15px; }
+        td { padding: 12px; border-bottom: 1px solid #eee; text-align: center; }
+        .save-btn { background: #3b82f6; color: white; padding: 5px 15px; }
+        .del-btn { background: #ef4444; color: white; padding: 5px 15px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>⚙️ إدارة المخزن والمنتجات</h1>
+        <button onclick="clearHistory()" style="background-color: #ef4444; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 1.1rem; font-weight: bold; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.4);">🗑️ تصفير سجل الحسابات وبدء شيفت جديد</button>
+        
+        <div class="input-group">
+            <div><label>الباركود</label><br><input type="text" id="newCode"></div>
+            <div><label>اسم الصنف</label><br><input type="text" id="newName"></div>
+            <div><label>السعر</label><br><input type="number" id="newPrice"></div>
+            <button class="add-btn" onclick="add()">إضافة صنف جديد +</button>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>الباركود</th>
+                    <th>اسم المنتج</th>
+                    <th>السعر (ج.م)</th>
+                    <th>تحكم</th>
+                </tr>
+            </thead>
+            <tbody id="productsTable"></tbody>
+        </table>
+    </div>
+
+    <script>
+         // طلب كلمة مرور بمجرد فتح الصفحة
+        const password = prompt("برجاء إدخال كلمة مرور المدير:");
+        if (password !== "1234") { // غير 1234 لأي رقم تحبه
+            alert("عفواً، ليس لديك صلاحية!");
+            window.location.href = "index.html"; // يرجعه لصفحة الكاشير
+        } else {
+            load(); // يكمل تحميل البيانات لو الباسورد صح
+        }
+        async function load() {
+            const res = await fetch('/api/products');
+            const data = await res.json();
+            document.getElementById('productsTable').innerHTML = data.map(p => `
+                <tr>
+                    <td>${p.code}</td>
+                    <td>${p.name}</td>
+                    <td><input type="number" value="${p.price}" id="p-${p.code}" style="width:80px"></td>
+                    <td>
+                        <button class="save-btn" onclick="update('${p.code}')">حفظ</button>
+                        <button class="del-btn" onclick="remove('${p.code}')">حذف</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        async function add() {
+            const codeInput = document.getElementById('newCode');
+            const nameInput = document.getElementById('newName');
+            const priceInput = document.getElementById('newPrice');
+            if (!codeInput.value || !nameInput.value || !priceInput.value) {
+                alert('يرجى ملء جميع الحقول');
+                return;
+            }
+            const product = {
+                code: codeInput.value,
+                name: nameInput.value,
+                price: parseFloat(priceInput.value)
+            };
+
+            const res = await fetch('/api/products', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(product)
+            });
+
+            if (res.ok) {
+                // تحديث الجدول فوراً
+                await load(); 
+                
+                // تصفير الخانات
+                codeInput.value = '';
+                nameInput.value = '';
+                priceInput.value = '';
+                codeInput.focus(); // الماوس يرجع لأول خانة
+            } else {
+                alert('خطأ: ممكن يكون الباركود مكرر');
+            }
+        }
+
+        async function update(code) {
+            const price = document.getElementById('p-' + code).value;
+            const res = await fetch('/api/products/' + code, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({price: parseFloat(price)})
+            });
+
+            if (res.ok) {
+                // ممكن نغير لون الخانة للحظة عشان نعرف المدير إنها اتسجلت
+                const input = document.getElementById('p-' + code);
+                input.style.backgroundColor = '#dcfce7'; // لون أخضر خفيف
+                setTimeout(() => input.style.backgroundColor = 'white', 500);
+            }
+        }
+
+        async function remove(code) {
+            if (!confirm('هل أنت متأكد من مسح هذا الصنف؟')) return;
+
+            const res = await fetch('/api/products/' + code, { method: 'DELETE' });
+            
+            if (res.ok) {
+                // تحديث الجدول فوراً في نفس اللحظة
+                await load();
+            } else {
+                alert('فشل المسح');
+            }
+        }
+
+        load();
+        async function clearHistory() {
+            // 1. تحذير أول
+            if (!confirm("⚠️ تحذير خطير: هل أنت متأكد من مسح جميع المبيعات والمرتجعات نهائياً؟ هذا الإجراء لا يمكن التراجع عنه!")) {
+                return;
+            }
+
+            // 2. تأكيد أخير بكلمة سر (عشان دي فلوس وشغل!)
+            const password = prompt("أدخل كلمة المرور لتأكيد التصفير (اكتب 1234 أو كلمة السر بتاعتك):");
+            if (password !== "1234") {
+                alert("❌ كلمة المرور غير صحيحة، تم إلغاء المسح لحماية بياناتك.");
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/history', { method: 'DELETE' });
+
+                if (response.ok) {
+                    alert("✅ تم تصفير سجل الحسابات بنجاح. ستبدأ الفاتورة القادمة من رقم 1.");
+                    // لو عندك دالة بتعرض الأرباح أو السجل في صفحة المدير، ناديها هنا عشان الشاشة تتحدث.
+                    // مثال: load();
+                } else {
+                    alert("❌ حدث خطأ أثناء تصفير السجل");
+                }
+            } catch (err) {
+                console.error(err);
+                alert("❌ فشل الاتصال بالسيرفر");
+            }
+        }
+    </script>
+</body>
+</html>
